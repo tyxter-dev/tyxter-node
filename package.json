@@ -1,0 +1,48 @@
+{
+  "name": "@tyxter/sdk-js",
+  "version": "0.8.0",
+  "description": "Tyxter Messaging TypeScript/JavaScript SDK.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyxter-dev/tyxter-node.git"
+  },
+  "homepage": "https://github.com/tyxter-dev/tyxter-node",
+  "bugs": {
+    "url": "https://github.com/tyxter-dev/tyxter-node/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "package.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./webhook-verifier": {
+      "types": "./dist/webhook-verifier.d.ts",
+      "default": "./dist/webhook-verifier.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.1",
+    "typescript-7": "npm:typescript@7.0.2",
+    "vitest": "4.1.7"
+  }
+}
