@@ -2,6 +2,7 @@ import type {
   LLMCompletionRequest,
   LLMCompletionResponse,
   LLMRouteResponse,
+  LLMRouteTargetQuery,
   ListLLMResponseLogsQuery,
   ListLLMResponseLogsResponse,
   ListLLMRoutePromptVersionsQuery,
@@ -24,25 +25,29 @@ export class LLMResource {
     return this.http.request<LLMRouteResponse>('PUT', '/v1/llm-routes', input, headers);
   }
 
-  async getRoute(): Promise<LLMRouteResponse> {
-    return this.http.request<LLMRouteResponse>('GET', '/v1/llm-routes');
+  async getRoute(query: LLMRouteTargetQuery = {}): Promise<LLMRouteResponse> {
+    const qs = toQs({ ...query });
+    return this.http.request<LLMRouteResponse>('GET', `/v1/llm-routes${qs}`);
   }
 
   async updateRoute(
     input: UpdateLLMRouteRequest,
-    query: { phone_number_id?: string } = {},
+    query: LLMRouteTargetQuery = {},
   ): Promise<LLMRouteResponse> {
-    return this.http.request<LLMRouteResponse>('PATCH', `/v1/llm-routes${toQs(query)}`, input);
+    const qs = toQs({ ...query });
+    return this.http.request<LLMRouteResponse>('PATCH', `/v1/llm-routes${qs}`, input);
   }
 
   async deleteRoute(
     options: { idempotencyKey?: string } = {},
+    query: LLMRouteTargetQuery = {},
   ): Promise<{ id: string; deleted: true }> {
+    const qs = toQs({ ...query });
     const headers: Record<string, string> = {};
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
     return this.http.request<{ id: string; deleted: true }>(
       'DELETE',
-      '/v1/llm-routes',
+      `/v1/llm-routes${qs}`,
       undefined,
       headers,
     );

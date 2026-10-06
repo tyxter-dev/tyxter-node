@@ -10,6 +10,152 @@ SDK is released independently and can lag its route surface or version. Canonica
 Releases publish from a `sdk-js-v<version>` git tag via npm Trusted Publishing.
 A version bump alone publishes nothing.
 
+## [Unreleased]
+
+## [0.9.0] — 2026-10-06
+
+### Fixed
+
+- Subscription subscribe/change send the flat API request body. Subscribe/change/cancel
+  send the supplied idempotency key in the header, preserving existing call signatures.
+- Package purchases are card-only; `payment_method` is optional and the SDK accepts the
+  optional `payment_method_id` saved-card selector.
+- Phone-specific LLM routes can be read with `llm.getRoute({ phone_number_id })` and deleted
+  with `llm.deleteRoute({ idempotencyKey }, { phone_number_id })`. Existing default-route
+  calls remain supported.
+- `contacts.list` exposes `search`, `status`, and `tag_id`; automation updates allow
+  `description: null`. Consent, AI/LLM, flow, payment-method, auto-top-up, retention, and
+  template-cost inputs expose their exact API fields instead of untyped JSON.
+- Optional trace headers are available on device authorization create/token, batch
+  reads/controls, media reads/delete, and transcription retrieval.
+- Compile-time request parity and schema-validated request tests cover these corrections.
+- Clarify that remaining messaging allowance uses the configured safety margin
+  and sending-phone quality ratio. Linked phones share portfolio usage but can
+  report different estimates when quality differs. This quality-aware change adds
+  no fields to public phone reads; additional dashboard pacing fields remain BFF-only.
+  Refs #951.
+
+### Deprecated
+
+- `whatsappChannels`, `WhatsAppChannelsResource`, and `WhatsAppChannelMessage` are legacy
+  unsupported helpers. The public API rejects their payloads with `invalid_message_request`.
+  They remain available to preserve imports and existing error handling; they do not publish
+  to WhatsApp Channels. The SDK examples now show only supported message channels.
+
+### Added
+
+- Beta WhatsApp Business groups eligibility read: `groups.retrieveEligibility`
+  (`GET /v1/groups/eligibility`, scope `groups:read`) and the `GroupEligibilityResponse` type.
+  It answers from Tyxter without reaching Meta. WhatsApp Business groups are business-owned groups
+  created through Meta's Groups API, never personal WhatsApp groups. Refs #1214.
+
+- Beta WhatsApp Business groups eligibility check: `groups.createEligibilityCheck`
+  (`POST /v1/groups/eligibility-checks`, scope `groups:write`, optional `idempotencyKey`). It
+  returns 202 with the stored answer and a new `check_requested_at`; a Tyxter worker reads the
+  facts from Meta afterwards, and `groups.retrieveEligibility` shows the result. Refs #1214.
+
+- Beta WhatsApp Business group create: `groups.create` (`POST /v1/groups`, scope `groups:write`,
+  optional `idempotencyKey`) and the `GroupResponse` type. It returns 202 with the group as
+  `pending`; a new group stays `pending` until a Tyxter worker resolves its create outcome, and a
+  create the worker finds it cannot send (for example the number was released meanwhile) ends `failed`
+  with a `failure.code` saying why. Refs #1214.
+
+- Beta WhatsApp Business group list: `groups.list` (`GET /v1/groups`, scope `groups:read`) with
+  cursor pagination and optional `phone_number_id` and `status` filters, and the
+  `ListGroupsResponse` type. Refs #1214.
+
+- Beta WhatsApp Business group webhook types: `GroupWebhookData` / `GroupWebhookEnvelope` for
+  `group.created`, `group.create_failed`, `group.deleted`, `group.delete_failed`,
+  `group.invite_link_reset` and `group.invite_link_reset_failed`, and
+  `GroupParticipantWebhookData` / `GroupParticipantWebhookEnvelope` for
+  `group.participant_joined` and `group.participant_removed` (`initiated_by` on a removal only).
+  Refs #1214.
+
+- Beta WhatsApp Business group retrieve: `groups.retrieve` (`GET /v1/groups/:group_id`, scope
+  `groups:read`). The id is percent-encoded into the path, so a personal WhatsApp group invite
+  link or app group id returns `422 personal_whatsapp_group_not_supported`; any other unknown id
+  returns `404 group_not_found`.
+  Refs #1214.
+
+- Beta WhatsApp Business group delete: `groups.delete` (`DELETE /v1/groups/:group_id`, scope
+  `groups:write`, optional `idempotencyKey`). It returns 202 with the group: an `active` group as
+  `deleting` (a Tyxter worker then deletes it), a `failed` group as `deleted`, and a `deleting` or
+  `deleted` group unchanged; a `pending` group returns `409 group_not_active`. It keeps working
+  when the `groups` feature family is disabled. Refs #1214.
+
+- Beta WhatsApp Business group invite-link reset: `groups.resetInviteLink`
+  (`POST /v1/groups/:group_id/invite-link/reset`, scope `groups:write`, optional `idempotencyKey`).
+  It returns 202 with the group still `active`; while it stays `active`, a Tyxter worker then
+  stores the new `invite_link`, or records `failure` and keeps the old link. While the group is
+  `deleting`, the reset's outcome leaves `failure` to the delete, and in production a reset not yet
+  sent when the delete is accepted is not sent (reset again if the delete is refused). Any other
+  status returns `409 group_not_active`; a same-key retry never resets again. A new request
+  while a reset worker is running returns `409 group_invite_link_reset_in_progress`; retry after
+  it finishes. A queued reset can still be superseded before a worker starts it. Refs #1214.
+
+- Beta WhatsApp Business group participants: `GroupResponse` gains `participants` (each `wa_id`
+  and `joined_at`) and `participant_count`, the current members Tyxter recorded from Meta's
+  participant events (sandbox: the simulation below); a `deleted` group lists none. Refs #1214.
+
+- Beta sandbox participant simulation: `sandbox.groups.simulateParticipant`
+  (`POST /v1/sandbox/groups/:group_id/participants`, scope `groups:write`, sandbox keys only,
+  optional `idempotencyKey`). It simulates a participant joining (`join`) or leaving (`remove`) an
+  `active` group and returns 200 with the group; a join of a current member or a removal of a
+  non-member changes nothing, so a retry never records the fact twice. A ninth joined participant
+  returns `409 group_participant_limit_reached`. Refs #1214.
+
+- `client.payments.cancel(id, { idempotencyKey })` queues merchant hosted-checkout cancellation and returns the current payment; a keyed replay returns the original receipt, so retrieve or poll for provider confirmation. Transparent Pix returns `payment_cancellation_unsupported` with feedback. Refs #1225.
+
+- `billing.balance()` returns `held_brl`, the credit held by outstanding production holds and
+  already deducted from `balance_brl`. `billing.listLedger()` entries are now typed as
+  `LedgerEntryResponse` (previously untyped JSON objects): `type` adds `hold` and `release` for
+  payment completion fees, `source_type` adds `payment_fee_hold` (also accepted as a filter), and
+  every entry has nullable `payment_fee` (`payment_object`, `payment_id`, `reservation_id`). Only
+  `debit` entries are spend. Refs #1211.
+
+- `PaymentResponse` and `AgenticPaymentResponse` carry optional `fees` (type `PaymentFees`) on
+  create, retrieve, list and every other route that returns a payment: `simulated` (sandbox),
+  `rate_card_id` (pricing version), `initiation` (`reservation_id`, `amount_brl`, `charged_at`)
+  and `completion` (`reservation_id`, `rate` as a fraction such as `"0.01"`, `amount_brl`, `state`
+  `held` | `settled` | `released` | `unresolved`, and its timestamps). `null` means no fee is owed
+  (the payment was charged none: accepted before payment-service fees applied, or by an API
+  version that did not charge them). An `Idempotency-Key` replay (creation, request approval, the
+  sandbox status route or cancel) returns its stored response, with `fees` as at the original
+  call, so read the payment for the current state; the key is absent only on such a replay whose
+  response was stored before the field existed. Refs #1211.
+
+- Message read senders and newly rendered `message.*` webhook data now include nullable
+  `profile_name`, the captured customer WhatsApp profile name for resolved inbound WhatsApp
+  messages. It is `null` for all other sender kinds and after privacy cleanup.
+
+- Customer-owned Salvy BYOK provider-connection methods: `providerConnections.salvy.register`,
+  `.rotate`, `.refreshDiscovery`, and `.listNumbers`. Writes require an idempotency key and
+  return the existing asynchronous provider-connection receipt; number reads use the persisted
+  cursor snapshot. The SDK now exports the matching Salvy request, operation, number, provider,
+  channel, and setup-target types.
+
+- Customer-owned Salvy phone foundation methods: `phoneNumbers.importSalvy` (`POST
+/v1/phone-numbers/import-salvy`), `phoneNumbers.completeSalvyRegistration` (`POST
+/v1/phone-numbers/:phone_number_id/salvy/complete-registration`),
+  `phoneNumbers.convertToByon` (`POST /v1/phone-numbers/:phone_number_id/convert-to-byon`), and
+  `billing.phoneManagement.list` (`GET /v1/billing/phone-management`). The three mutations require
+  an `Idempotency-Key`; management list is read-only. While runtime admission is inactive, import
+  returns `503 salvy_byok_unavailable` even for a plan whose `salvy_byok_enabled` flag is true.
+  Integrating agents should use the provider-connection methods for cached discovery and must not
+  infer enrollment readiness from that plan flag.
+
+- Optional advisory `warnings` on phone provision/connect and Meta WhatsApp
+  registration responses. Legacy responses may omit the field; phone read types
+  retain their existing shape.
+
+- Optional `prompt` and `keywords` on transcription create/retry requests, with
+  normalized replay, retry inheritance and explicit empty clearing.
+
+- Optional `TyxterErrorBody.retryable` and readonly `TyxterApiError.retryable`
+  expose the `false` stop hint for `402 credit_balance_exhausted`. Stop automatic
+  retries until credit recovery; legacy omission remains `undefined`. The SDK
+  does not add retries or a recovery timer. Refs #861.
+
 ## [0.8.0] — 2026-09-01
 
 The `sdk-js-v0.7.0` tag was never pushed, so the 0.7.0 section below never

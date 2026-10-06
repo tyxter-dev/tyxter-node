@@ -40,6 +40,7 @@ describe('BillingResource', () => {
   it('GETs /v1/billing/balance', async () => {
     const body = {
       object: 'credit_balance',
+      production_blocked: false,
       organization_id: 'org_1',
       balance_brl: '42.5000',
       currency: 'brl',
@@ -108,6 +109,41 @@ describe('BillingResource', () => {
     });
     await client.billing.listLedger();
     expect(calls[0]?.url).toBe('http://test/v1/billing/ledger');
+  });
+
+  it('lists and retrieves scoped phone renewals through BillingResource.phoneRenewals', async () => {
+    const { client, calls } = withCapture({
+      object: 'list',
+      data: [],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    await client.billing.phoneRenewals.list({
+      limit: 10,
+      starting_after: 'cur_renewal_1',
+      status: 'funding_required',
+    });
+    await client.billing.phoneRenewals.retrieve('prc_1');
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'GET http://test/v1/billing/phone-renewals?limit=10&starting_after=cur_renewal_1&status=funding_required',
+      'GET http://test/v1/billing/phone-renewals/prc_1',
+    ]);
+  });
+
+  it('lists management coverage through BillingResource.phoneManagement', async () => {
+    const { client, calls } = withCapture({
+      object: 'list',
+      data: [],
+      has_more: false,
+      next_cursor: null,
+      summary: { retained_count: 0, monthly_total_brl: '0', next_charge_at: null },
+    });
+    await client.billing.phoneManagement.list({ limit: 10, starting_after: 'cur_management_1' });
+    expect(calls[0]?.url).toBe(
+      'http://test/v1/billing/phone-management?limit=10&starting_after=cur_management_1',
+    );
   });
 
   it('GETs /v1/billing/packages through BillingResource.packages', async () => {

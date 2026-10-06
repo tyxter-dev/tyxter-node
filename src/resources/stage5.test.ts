@@ -275,3 +275,43 @@ describe('TemplatesResource', () => {
     expect(calls[0]?.headers['idempotency-key']).toBe(`idem-tpl-${methodName}`);
   });
 });
+
+describe('display-name advisory responses', () => {
+  it('passes warning objects through phone provision/connect and Meta registration with the retry key', async () => {
+    const warnings = [
+      {
+        code: 'display_name_promotional_word',
+        field: 'display_name',
+        message: 'Consider removing promotional words.',
+      },
+    ];
+    const { client, calls } = withCapture({ warnings });
+    expect(
+      (await client.phoneNumbers.provision({ ddd: '11' }, { idempotencyKey: 'advice_1' })).warnings,
+    ).toEqual(warnings);
+    expect(
+      (
+        await client.phoneNumbers.connect(
+          { phone: '+5511999999999', meta_phone_number_id: 'mpn_1' },
+          { idempotencyKey: 'advice_2' },
+        )
+      ).warnings,
+    ).toEqual(warnings);
+    expect(
+      (
+        await client.providerConnections.registerMeta(
+          {
+            display_name: 'Clara Monteiro Oficial',
+            waba_id: 'waba_1',
+            phone_number_id: 'mpn_1',
+            access_token: 'synthetic-token',
+          },
+          'advice_3',
+        )
+      ).warnings,
+    ).toEqual(warnings);
+    expect(
+      calls.map((call) => call.headers['idempotency-key'] ?? call.headers['Idempotency-Key']),
+    ).toEqual(['advice_1', 'advice_2', 'advice_3']);
+  });
+});

@@ -1,8 +1,12 @@
+import type { PhoneNumberMutationResponse } from '../display-name-contracts.js';
 import type {
   ConnectPhoneNumberRequest,
+  CompleteSalvyPhoneRegistrationRequest,
+  ImportSalvyPhoneNumberRequest,
   ListAvailableRegionsResponse,
   ListPhoneNumbersResponse,
   PhoneNumberResponse,
+  PhoneNumberReadResponse,
   ProvisionPhoneNumberRequest,
   TransferPhoneNumberRequest,
 } from '../contracts.js';
@@ -18,17 +22,17 @@ export class PhoneNumbersResource {
     return this.http.request<ListPhoneNumbersResponse>('GET', `/v1/phone-numbers${toQs(query)}`);
   }
 
-  async retrieve(id: string): Promise<PhoneNumberResponse> {
-    return this.http.request<PhoneNumberResponse>('GET', `/v1/phone-numbers/${id}`);
+  async retrieve(id: string): Promise<PhoneNumberReadResponse> {
+    return this.http.request<PhoneNumberReadResponse>('GET', `/v1/phone-numbers/${id}`);
   }
 
   async provision(
     input: ProvisionPhoneNumberRequest,
     options: { idempotencyKey?: string } = {},
-  ): Promise<PhoneNumberResponse> {
+  ): Promise<PhoneNumberMutationResponse> {
     const headers: Record<string, string> = {};
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
-    return this.http.request<PhoneNumberResponse>(
+    return this.http.request<PhoneNumberMutationResponse>(
       'POST',
       '/v1/phone-numbers/provision',
       input,
@@ -39,10 +43,10 @@ export class PhoneNumbersResource {
   async connect(
     input: ConnectPhoneNumberRequest,
     options: { idempotencyKey?: string } = {},
-  ): Promise<PhoneNumberResponse> {
+  ): Promise<PhoneNumberMutationResponse> {
     const headers: Record<string, string> = {};
     if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
-    return this.http.request<PhoneNumberResponse>(
+    return this.http.request<PhoneNumberMutationResponse>(
       'POST',
       '/v1/phone-numbers/connect',
       input,
@@ -50,8 +54,42 @@ export class PhoneNumbersResource {
     );
   }
 
+  /** Imports one explicitly selected cached account-owned Salvy resource. */
+  async importSalvy(
+    input: ImportSalvyPhoneNumberRequest,
+    idempotencyKey: string,
+  ): Promise<PhoneNumberResponse> {
+    return this.http.request<PhoneNumberResponse>('POST', '/v1/phone-numbers/import-salvy', input, {
+      'Idempotency-Key': idempotencyKey,
+    });
+  }
+
+  /** Queues independent Meta ownership validation for an imported Salvy number. */
+  async completeSalvyRegistration(
+    id: string,
+    input: CompleteSalvyPhoneRegistrationRequest,
+    idempotencyKey: string,
+  ): Promise<PhoneNumberResponse> {
+    return this.http.request<PhoneNumberResponse>(
+      'POST',
+      `/v1/phone-numbers/${id}/salvy/complete-registration`,
+      input,
+      { 'Idempotency-Key': idempotencyKey },
+    );
+  }
+
   async disconnect(id: string): Promise<PhoneNumberResponse> {
     return this.http.request<PhoneNumberResponse>('DELETE', `/v1/phone-numbers/${id}`);
+  }
+
+  /** Ends optional customer-Salvy management and keeps this same BYON phone. */
+  async convertToByon(id: string, idempotencyKey: string): Promise<PhoneNumberResponse> {
+    return this.http.request<PhoneNumberResponse>(
+      'POST',
+      `/v1/phone-numbers/${id}/convert-to-byon`,
+      {},
+      { 'Idempotency-Key': idempotencyKey },
+    );
   }
 
   /** 202 — Salvy phones go release_requested → released via the worker; BYON releases directly. */

@@ -181,6 +181,26 @@ describe('SandboxResource', () => {
     expect(calls[0]?.headers['tyxter-trace-id']).toBeUndefined();
   });
 
+  it('POSTs /v1/sandbox/groups/:id/participants with encoded id, body and Idempotency-Key (#1214)', async () => {
+    const { client, calls } = withCapture({ id: 'grp_1', object: 'group', participant_count: 1 });
+    const result = await client.sandbox.groups.simulateParticipant(
+      'grp 1',
+      { wa_id: '5511999990001', action: 'join' },
+      { idempotencyKey: 'idem_participant_1' },
+    );
+    expect(calls[0]?.url).toBe('http://test/v1/sandbox/groups/grp%201/participants');
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.headers['idempotency-key']).toBe('idem_participant_1');
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ wa_id: '5511999990001', action: 'join' });
+    expect(result).toMatchObject({ object: 'group', participant_count: 1 });
+
+    await client.sandbox.groups.simulateParticipant('grp_1', {
+      wa_id: '5511999990001',
+      action: 'remove',
+    });
+    expect(calls[1]?.headers['idempotency-key']).toBeUndefined();
+  });
+
   it('POSTs /v1/sandbox/llm/failure with body and write headers', async () => {
     const { client, calls } = withCapture({
       armed: true,

@@ -80,9 +80,11 @@ export class InstagramMessagesResource {
   }
 }
 
+/** @deprecated WhatsApp Channel publishing is unsupported and returns invalid_message_request. */
 export class WhatsAppChannelsResource {
   constructor(private readonly messages: MessagesResource) {}
 
+  /** @deprecated Unsupported by the public API; returns invalid_message_request. */
   async publishText(
     input: WhatsAppChannelTextMessageInput,
     options: CreateMessageOptions = {},
@@ -90,6 +92,7 @@ export class WhatsAppChannelsResource {
     return this.messages.create(WhatsAppChannelMessage.text(input), options);
   }
 
+  /** @deprecated Unsupported by the public API; returns invalid_message_request. */
   async publishMedia(
     input: WhatsAppChannelMediaMessageInput,
     options: CreateMessageOptions = {},

@@ -33,6 +33,15 @@ export class PaymentsResource {
     return this.http.request<PaymentResponse>('GET', `/v1/payments/${paymentId}`);
   }
 
+  async cancel(paymentId: string, options: PaymentWriteOptions = {}): Promise<PaymentResponse> {
+    return this.http.request<PaymentResponse>(
+      'POST',
+      `/v1/payments/${paymentId}/cancel`,
+      {},
+      paymentHeaders(options),
+    );
+  }
+
   async requestApproval(
     paymentId: string,
     input: RequestPaymentApprovalRequest = {},

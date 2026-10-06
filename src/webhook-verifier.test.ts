@@ -12,7 +12,7 @@ const sandboxMessageReceivedRawBody = JSON.stringify({
     message_id: 'msg_sandbox_inbound_123',
     status: 'received',
     channel: 'whatsapp',
-    sender: { type: 'phone_e164', id: '+5511988887777' },
+    sender: { type: 'phone_e164', id: '+5511988887777', profile_name: 'Sandbox User' },
     recipient: { type: 'whatsapp_phone_number', id: 'pn_sandbox_123' },
     provider_message_id: 'sb_wamid_1f7b0c9d4e2a48f3b5c6d7e8f9a0b1c2',
     metadata: { sandbox: true },
@@ -27,7 +27,7 @@ const sandboxSignatureVector = {
   secret: 'f7d9a2c04b8e61537a90d4c2e8b5f013c6a7d84592e0b1f3a8c5d6e7f9012345',
   timestamp: '1779375600',
   rawBody: sandboxMessageReceivedRawBody,
-  signature: '0693eb1d17770f958eba5f8e927e145844b507f418513b0aeb59ccb5b5cde329',
+  signature: '1b5876a1a85c8e2a1f7e4f93bce85449b29103fe9e19bb088ff4ce792654373e',
 };
 
 describe('verifyWebhookSignature', () => {

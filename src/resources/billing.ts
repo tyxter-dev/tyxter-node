@@ -15,10 +15,15 @@ import type {
   ListInvoicesQuery,
   ListInvoicesResponse,
   ListLedgerEntriesResponse,
+  ListPhoneRenewalsQuery,
+  ListPhoneRenewalsResponse,
+  ListPhoneManagementQuery,
+  ListPhoneManagementResponse,
   ListRateCardsQuery,
   ListRateCardsResponse,
   PurchaseBillingPackageRequest,
   RateCardResponse,
+  PhoneRenewalResponse,
   SaveBillingPaymentMethodRequest,
   TopupResponse,
   UpdateAutoTopupConfigRequest,
@@ -31,7 +36,8 @@ export interface ListLedgerQuery {
   limit?: number;
   starting_after?: string;
   environment?: 'sandbox' | 'production';
-  source_type?: 'usage' | 'credit_topup';
+  /** `payment_fee_hold` lists payment completion-fee holds and their releases. */
+  source_type?: 'usage' | 'credit_topup' | 'payment_fee_hold';
 }
 
 export class BillingResource {
@@ -64,6 +70,13 @@ export class BillingResource {
     list: (query: ListInvoicesQuery = {}) => this.listInvoices(query),
     download: (invoiceId: string) => this.downloadInvoice(invoiceId),
   };
+  readonly phoneRenewals = {
+    list: (query: ListPhoneRenewalsQuery = {}) => this.listPhoneRenewals(query),
+    retrieve: (cycleId: string) => this.retrievePhoneRenewal(cycleId),
+  };
+  readonly phoneManagement = {
+    list: (query: ListPhoneManagementQuery = {}) => this.listPhoneManagement(query),
+  };
   // Subscription plans.
   readonly plans = {
     list: () => this.listPlans(),
@@ -89,23 +102,30 @@ export class BillingResource {
     body: SubscribePlanRequest,
     idempotencyKey?: string,
   ): Promise<SubscribePlanResponse> {
-    return this.http.request<SubscribePlanResponse>('POST', '/v1/billing/plan/subscribe', {
+    return this.http.request<SubscribePlanResponse>(
+      'POST',
+      '/v1/billing/plan/subscribe',
       body,
-      idempotencyKey,
-    });
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    );
   }
 
   async changePlan(body: ChangePlanRequest, idempotencyKey?: string): Promise<CurrentPlanResponse> {
-    return this.http.request<CurrentPlanResponse>('POST', '/v1/billing/plan/change', {
+    return this.http.request<CurrentPlanResponse>(
+      'POST',
+      '/v1/billing/plan/change',
       body,
-      idempotencyKey,
-    });
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    );
   }
 
   async cancelPlan(idempotencyKey?: string): Promise<CurrentPlanResponse> {
-    return this.http.request<CurrentPlanResponse>('POST', '/v1/billing/plan/cancel', {
-      idempotencyKey,
-    });
+    return this.http.request<CurrentPlanResponse>(
+      'POST',
+      '/v1/billing/plan/cancel',
+      undefined,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    );
   }
 
   async listInvoices(query: ListInvoicesQuery = {}): Promise<ListInvoicesResponse> {
@@ -115,6 +135,36 @@ export class BillingResource {
       project_id: query.project_id,
     });
     return this.http.request<ListInvoicesResponse>('GET', `/v1/invoices${qs}`);
+  }
+
+  /**
+   * Lists prepaid continuing-rental decisions in the API key's exact tenant,
+   * project, and environment. This is read-only account-recovery state, not a
+   * manual renewal operation, and remains available on exhausted production keys.
+   */
+  async listPhoneRenewals(query: ListPhoneRenewalsQuery = {}): Promise<ListPhoneRenewalsResponse> {
+    const qs = toQs({
+      limit: query.limit,
+      starting_after: query.starting_after,
+      status: query.status,
+    });
+    return this.http.request<ListPhoneRenewalsResponse>('GET', `/v1/billing/phone-renewals${qs}`);
+  }
+
+  /** Retrieves one exact-scope renewal cycle; unknown and cross-scope ids return phone_renewal_not_found. */
+  async retrievePhoneRenewal(cycleId: string): Promise<PhoneRenewalResponse> {
+    return this.http.request<PhoneRenewalResponse>('GET', `/v1/billing/phone-renewals/${cycleId}`);
+  }
+
+  /** Cursor-paginated, exact-scope billing summary; never creates an enrollment. */
+  async listPhoneManagement(
+    query: ListPhoneManagementQuery = {},
+  ): Promise<ListPhoneManagementResponse> {
+    const qs = toQs({ limit: query.limit, starting_after: query.starting_after });
+    return this.http.request<ListPhoneManagementResponse>(
+      'GET',
+      `/v1/billing/phone-management${qs}`,
+    );
   }
 
   async downloadInvoice(invoiceId: string): Promise<InvoiceDownloadResponse> {

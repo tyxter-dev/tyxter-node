@@ -95,6 +95,21 @@ describe('PaymentsResource', () => {
     expect(calls[0]?.method).toBe('GET');
   });
 
+  it('queues cancellation with an empty body and retains the current response and write headers', async () => {
+    const { client, calls } = withCapture();
+    const current = await client.payments.cancel('pay_123', {
+      idempotencyKey: 'cancel_key',
+      traceId: 'trc_cancel',
+    });
+    expect(calls[0]).toMatchObject({
+      url: 'http://test/v1/payments/pay_123/cancel',
+      method: 'POST',
+      body: '{}',
+      headers: { 'idempotency-key': 'cancel_key', 'tyxter-trace-id': 'trc_cancel' },
+    });
+    expect(current.status).toBe('link_generated');
+  });
+
   it('POSTs /v1/payments/:id/request-approval with optional body', async () => {
     const { client, calls } = withCapture(paymentResponse({ status: 'approval_requested' }));
 

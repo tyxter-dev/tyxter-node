@@ -3,8 +3,8 @@
 TypeScript and JavaScript client for the Tyxter Messaging API, with typed resources
 and a Node.js webhook signature verifier.
 
-This checkout mirrors SDK **0.8.0** from source commit
-`58524926a1fa9498bcfe3abb9d7aa8fd39be1e85`. [SOURCE.json](./SOURCE.json) records the selected source
+This checkout mirrors SDK **0.9.0** from source commit
+`85ba07ae1476c8a0fbbaebfc275c6ebcc82631ed`. [SOURCE.json](./SOURCE.json) records the selected source
 revision and SHA-256 digests of its SDK inputs. Runtime TypeScript files are copied
 without modification. Build configuration and repository guidance are generated
 for this standalone checkout.

@@ -47,27 +47,58 @@ export class MediaResource {
     );
   }
 
-  async retrieve(assetId: string): Promise<MediaAssetResponse> {
-    return this.http.request<MediaAssetResponse>('GET', `/v1/media/${assetId}`);
-  }
-
-  async createDownloadUrl(assetId: string): Promise<MediaAssetDownloadResponse> {
-    return this.http.request<MediaAssetDownloadResponse>(
+  async retrieve(assetId: string, options: { traceId?: string } = {}): Promise<MediaAssetResponse> {
+    return this.http.request<MediaAssetResponse>(
       'GET',
-      `/v1/media/${assetId}/download-url`,
+      `/v1/media/${assetId}`,
+      undefined,
+      mediaHeaders(options),
     );
   }
 
-  async list(query: Partial<ListMediaAssetsQuery> = {}): Promise<ListMediaAssetsResponse> {
-    return this.http.request<ListMediaAssetsResponse>('GET', `/v1/media${toQs(query)}`);
+  async createDownloadUrl(
+    assetId: string,
+    options: { traceId?: string } = {},
+  ): Promise<MediaAssetDownloadResponse> {
+    return this.http.request<MediaAssetDownloadResponse>(
+      'GET',
+      `/v1/media/${assetId}/download-url`,
+      undefined,
+      mediaHeaders(options),
+    );
   }
 
-  async delete(assetId: string): Promise<DeleteMediaAssetResponse> {
-    return this.http.request<DeleteMediaAssetResponse>('DELETE', `/v1/media/${assetId}`);
+  async list(
+    query: Partial<ListMediaAssetsQuery> = {},
+    options: { traceId?: string } = {},
+  ): Promise<ListMediaAssetsResponse> {
+    return this.http.request<ListMediaAssetsResponse>(
+      'GET',
+      `/v1/media${toQs(query)}`,
+      undefined,
+      mediaHeaders(options),
+    );
   }
 
-  async storageUsage(): Promise<MediaStorageUsageResponse> {
-    return this.http.request<MediaStorageUsageResponse>('GET', '/v1/media/storage-usage');
+  async delete(
+    assetId: string,
+    options: { traceId?: string } = {},
+  ): Promise<DeleteMediaAssetResponse> {
+    return this.http.request<DeleteMediaAssetResponse>(
+      'DELETE',
+      `/v1/media/${assetId}`,
+      undefined,
+      mediaHeaders(options),
+    );
+  }
+
+  async storageUsage(options: { traceId?: string } = {}): Promise<MediaStorageUsageResponse> {
+    return this.http.request<MediaStorageUsageResponse>(
+      'GET',
+      '/v1/media/storage-usage',
+      undefined,
+      mediaHeaders(options),
+    );
   }
 
   async upload(

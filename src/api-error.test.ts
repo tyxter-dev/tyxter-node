@@ -40,10 +40,68 @@ describe('TyxterApiError', () => {
       expect(apiErr.code).toBe('transcription_retry_rate_limited');
       expect(apiErr.message).toBe('Wait before replaying this retry command.');
       expect(apiErr.retryAfterMs).toBe(60_000);
+      expect(apiErr.retryable).toBeUndefined();
       expect(apiErr.requestId).toBe('req_123');
       expect(apiErr.traceId).toBe('trc_456');
       expect(apiErr.name).toBe('TyxterApiError');
+      expect(apiErr.details).toBeUndefined();
     }
+  });
+
+  it('exposes bounded listen-session conflict details while preserving the original body', async () => {
+    const response = {
+      error: {
+        type: 'conflict',
+        code: 'webhook_listen_session_active_exists',
+        message: 'A production webhook listen session is already active for this environment.',
+        details: {
+          active_session: {
+            id: 'wls_123',
+            expires_at: '2026-05-29T13:05:00.000Z',
+            created_at: '2026-05-29T13:00:00.000Z',
+          },
+        },
+        newer_server_field: 'retained',
+      },
+    };
+    const client = withErrorResponse(409, response);
+
+    try {
+      await client.messages.list();
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TyxterApiError);
+      const apiErr = err as TyxterApiError;
+      expect(apiErr.details).toEqual(response.error.details);
+      expect(apiErr.body).toEqual(response.error);
+    }
+  });
+
+  it('preserves the suspended-phone refusal from POST /v1/messages for an SDK sender', async () => {
+    const client = withErrorResponse(403, {
+      error: {
+        type: 'authorization_error',
+        code: 'phone_service_suspended',
+        message: 'Phone service is suspended until management coverage is funded.',
+        request_id: 'req_phone_service',
+        trace_id: 'trc_phone_service',
+      },
+    });
+
+    await expect(
+      client.messages.create({
+        channel: 'whatsapp',
+        sender: { type: 'whatsapp_phone_number', id: 'pn_suspended' },
+        recipient: { type: 'phone_e164', id: '+5511999999999' },
+        message: { type: 'text', text: { body: 'blocked before provider work' } },
+      }),
+    ).rejects.toMatchObject({
+      name: 'TyxterApiError',
+      status: 403,
+      type: 'authorization_error',
+      code: 'phone_service_suspended',
+      traceId: 'trc_phone_service',
+    });
   });
 
   it('parses the unmatched-route 404 envelope, discovery pointer included', async () => {
@@ -96,26 +154,32 @@ describe('TyxterApiError', () => {
     }
   });
 
-  it('exposes PaymentRequiredError fields correctly', async () => {
-    const client = withErrorResponse(402, {
-      error: {
-        type: 'payment_required',
-        code: 'credit_balance_exhausted',
-        message: 'Credit balance exhausted.',
-        request_id: 'req_789',
-        trace_id: 'trc_abc',
-      },
-    });
+  it.each([false, undefined] as const)(
+    'preserves the payment stop hint %s without synthesizing a legacy policy',
+    async (retryable) => {
+      const client = withErrorResponse(402, {
+        error: {
+          type: 'payment_required',
+          code: 'credit_balance_exhausted',
+          message: 'Credit balance exhausted.',
+          ...(retryable === undefined ? {} : { retryable }),
+          request_id: 'req_789',
+          trace_id: 'trc_abc',
+        },
+      });
 
-    try {
-      await client.messages.list();
-      expect.unreachable('should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(TyxterApiError);
-      const apiErr = err as TyxterApiError;
-      expect(apiErr.status).toBe(402);
-      expect(apiErr.type).toBe('payment_required');
-      expect(apiErr.code).toBe('credit_balance_exhausted');
-    }
-  });
+      try {
+        await client.messages.list();
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TyxterApiError);
+        const apiErr = err as TyxterApiError;
+        expect(apiErr.status).toBe(402);
+        expect(apiErr.type).toBe('payment_required');
+        expect(apiErr.code).toBe('credit_balance_exhausted');
+        expect(apiErr.retryable).toBe(retryable);
+        expect(apiErr.retryAfterMs).toBeUndefined();
+      }
+    },
+  );
 });

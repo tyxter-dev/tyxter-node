@@ -30,16 +30,27 @@ export interface ErrorDiscoveryPointer {
   well_known: string;
 }
 
+/** Bounded recovery metadata for an active production listen-session conflict. */
+export interface WebhookListenSessionConflictDetails {
+  active_session: {
+    id: string;
+    expires_at: string;
+    created_at: string;
+  };
+}
+
 export interface TyxterErrorBody {
   type: TyxterErrorType;
   code: string;
   message: string;
   param?: string;
   retry_after_ms?: number;
+  retryable?: false;
   request_id?: string;
   trace_id?: string;
   feedback?: ErrorFeedbackPointer;
   discovery?: ErrorDiscoveryPointer;
+  details?: WebhookListenSessionConflictDetails;
   [key: string]: unknown;
 }
 
@@ -309,7 +320,9 @@ export type MessageIdentity =
  */
 export type PhoneLessInboundSenderIdentity = { type: 'phone_e164'; id: '' };
 
-export type MessageReadSenderIdentity = MessageIdentity | PhoneLessInboundSenderIdentity;
+export type MessageReadSenderIdentity =
+  | (MessageIdentity & { profile_name: string | null })
+  | (PhoneLessInboundSenderIdentity & { profile_name: string | null });
 
 export type StructuredPhoneE164Identity = {
   type: 'phone_e164';
@@ -337,6 +350,7 @@ export interface CreateInstagramMessageRequestBase extends OutboundMessageBase {
   recipient: { type: 'instagram_user'; id: string };
 }
 
+/** @deprecated WhatsApp Channel publishing is unsupported; retained for source compatibility. */
 export interface CreateWhatsAppChannelMessageRequestBase extends OutboundMessageBase {
   channel: 'whatsapp_channel';
   sender: { type: 'whatsapp_channel'; id: string };
@@ -636,7 +650,6 @@ export interface MediaUploadResponse {
   upload_headers: Record<string, string>;
   expires_at: string;
 }
-
 export interface MediaAssetResponse {
   id: string;
   object: 'media_asset';
@@ -662,21 +675,22 @@ export interface MediaAssetResponse {
   created_at: string;
   updated_at: string;
 }
-
 export interface MediaAssetDownloadResponse {
   id: string;
   object: 'media_asset_download';
   download_url: string;
   expires_at: string;
 }
-
 export interface RequestMessageMediaTranscription {
+  /** Advisory context, trimmed; at most 1024 UTF-16 code units. Empty clears; retry omission inherits. */
+  prompt?: string;
+  /** At most 50 trimmed terms of 1–128 UTF-16 code units; no line separators or angle brackets.
+   * Order, case and duplicates are preserved. Empty clears; retry omission inherits. */
+  keywords?: string[];
   /** Optional ISO 639-1 language hint, for example `pt` or `en`. */
   language?: string;
 }
-
 export type MessageMediaTranscriptStatus = 'pending' | 'succeeded' | 'failed';
-
 export interface MessageMediaTranscriptResponse {
   id: string;
   object: 'message_media_transcript';
@@ -814,20 +828,6 @@ export interface WebhookEventEnvelope<TType extends string = string, TData = Jso
   data: TData;
 }
 
-/** Existing `credit.topped_up` snapshot. `provider` is absent for historical replay. */
-export interface CreditToppedUpWebhookData {
-  topup_id: string;
-  amount_brl: string;
-  payment_method: 'pix' | 'card' | 'x402' | 'manual' | 'promotion';
-  provider?: 'stripe' | 'abacate_pay' | 'manual' | 'promotion';
-  balance_brl: string;
-}
-
-export type CreditToppedUpWebhookEnvelope = WebhookEventEnvelope<
-  'credit.topped_up',
-  CreditToppedUpWebhookData
->;
-
 export type MessageMediaTranscriptionWebhookEventType =
   | 'message.media_transcribed'
   | 'message.media_transcription_failed';
@@ -836,10 +836,15 @@ export interface MessageWebhookData {
   message_id: string;
   status: string;
   channel: 'whatsapp' | 'instagram';
-  sender: { type: string; id: string };
+  sender: { type: string; id: string; profile_name: string | null };
   recipient: { type: string; id: string };
   provider_message_id: string | null;
   metadata: unknown | null;
+}
+
+/** Immutable typed webhook snapshots created before `profile_name` was added. */
+interface LegacyMessageWebhookData extends Omit<MessageWebhookData, 'sender'> {
+  sender: { type: string; id: string };
 }
 
 export interface MessageMediaTranscribedWebhookData extends MessageWebhookData {
@@ -856,10 +861,13 @@ export interface MessageMediaTranscribedWebhookData extends MessageWebhookData {
   };
 }
 
-export type MessageMediaTranscribedWebhookEnvelope = WebhookEventEnvelope<
-  'message.media_transcribed',
-  MessageMediaTranscribedWebhookData
->;
+interface LegacyMessageMediaTranscribedWebhookData extends LegacyMessageWebhookData {
+  transcript: MessageMediaTranscribedWebhookData['transcript'];
+}
+
+export type MessageMediaTranscribedWebhookEnvelope =
+  | WebhookEventEnvelope<'message.media_transcribed', MessageMediaTranscribedWebhookData>
+  | WebhookEventEnvelope<'message.media_transcribed', LegacyMessageMediaTranscribedWebhookData>;
 
 export interface MessageMediaTranscriptionFailedWebhookData extends MessageWebhookData {
   transcript: {
@@ -873,10 +881,19 @@ export interface MessageMediaTranscriptionFailedWebhookData extends MessageWebho
   };
 }
 
-export type MessageMediaTranscriptionFailedWebhookEnvelope = WebhookEventEnvelope<
-  'message.media_transcription_failed',
-  MessageMediaTranscriptionFailedWebhookData
->;
+interface LegacyMessageMediaTranscriptionFailedWebhookData extends LegacyMessageWebhookData {
+  transcript: MessageMediaTranscriptionFailedWebhookData['transcript'];
+}
+
+export type MessageMediaTranscriptionFailedWebhookEnvelope =
+  | WebhookEventEnvelope<
+      'message.media_transcription_failed',
+      MessageMediaTranscriptionFailedWebhookData
+    >
+  | WebhookEventEnvelope<
+      'message.media_transcription_failed',
+      LegacyMessageMediaTranscriptionFailedWebhookData
+    >;
 
 export type MessageMediaTranscriptionWebhookEnvelope =
   | MessageMediaTranscribedWebhookEnvelope
@@ -917,6 +934,73 @@ export type ProviderConnectionDisableScheduledWebhookEnvelope = WebhookEventEnve
   'provider_connection.disable_scheduled',
   ProviderConnectionDisableScheduledWebhookData
 >;
+
+/**
+ * Data of the six WhatsApp Business group lifecycle webhook events (beta):
+ * `group.created`, `group.create_failed`, `group.deleted`, `group.delete_failed`,
+ * `group.invite_link_reset` and `group.invite_link_reset_failed`. `occurred_at`
+ * is when Tyxter recorded the outcome. On the three `*_failed` events `failure`
+ * is the failure of the operation that failed, stored with the event when
+ * Tyxter recorded the outcome: a delayed delivery or a listen read still shows
+ * it after a newer delete or reset changed the group's `failure`, and a reset
+ * that failed while the group was `deleting` carries its own reason although
+ * the group's `failure` stays the delete's. Every other field, and `failure` on
+ * the other three events, is the group as Tyxter reads it when it sends the
+ * event (or serves it on a listen read), so a delayed or replayed event can
+ * show a later state.
+ * `invite_link` lets anyone who has it join the group: store payloads as secrets.
+ */
+export interface GroupWebhookData {
+  group_id: string;
+  phone_number_id: string;
+  status: 'pending' | 'active' | 'failed' | 'deleting' | 'deleted';
+  subject: string;
+  provider_group_id: string | null;
+  invite_link: string | null;
+  failure: { code: string; message: string; provider: MessageProviderError | null } | null;
+  occurred_at: string;
+}
+
+export type GroupWebhookEnvelope = WebhookEventEnvelope<
+  | 'group.created'
+  | 'group.create_failed'
+  | 'group.deleted'
+  | 'group.delete_failed'
+  | 'group.invite_link_reset'
+  | 'group.invite_link_reset_failed',
+  GroupWebhookData
+>;
+
+/**
+ * Data of `group.participant_joined` / `group.participant_removed` (beta): the
+ * join or removal as Tyxter recorded it, never the group's later state.
+ * `participant.wa_id` is the participant's WhatsApp ID. `occurred_at` is Meta's
+ * time in whole seconds (sandbox: the simulation time); the same participant,
+ * action and second reported twice is one event. `participant_count` is
+ * Tyxter's count right after it applied the change. A join or removal older than
+ * the participant's latest recorded one is still delivered although group reads
+ * do not reflect it. `initiated_by` is present exactly on a removal.
+ */
+export interface GroupParticipantWebhookData {
+  group_id: string;
+  phone_number_id: string;
+  participant: { wa_id: string };
+  participant_count: number;
+  occurred_at: string;
+  initiated_by?: 'participant' | 'business';
+}
+
+export type GroupParticipantWebhookEnvelope =
+  | WebhookEventEnvelope<
+      'group.participant_joined',
+      Omit<GroupParticipantWebhookData, 'initiated_by'>
+    >
+  | WebhookEventEnvelope<
+      'group.participant_removed',
+      Omit<GroupParticipantWebhookData, 'initiated_by'> & {
+        initiated_by: 'participant' | 'business';
+      }
+    >;
 
 export type PaymentWebhookEventType =
   | 'payment.created'
@@ -1665,8 +1749,14 @@ export interface MessageBatchFailureExportResponse {
 
 export interface CreditBalanceResponse {
   object: 'credit_balance';
+  production_blocked: boolean;
   organization_id: string;
   balance_brl: string;
+  /**
+   * Credit held by outstanding production reservations, already deducted from
+   * `balance_brl`. A hold is not spend; sandbox holds are not counted.
+   */
+  held_brl: string;
   currency: 'brl';
   updated_at: string;
 }
@@ -1709,6 +1799,7 @@ export interface PlanOfferingResponse {
   net_transport_rate_brl: string;
   throughput_tier: ThroughputTier;
   max_phones: number | null;
+  salvy_byok_enabled: boolean;
 }
 export interface ListPlansResponse {
   object: 'list';
@@ -1727,6 +1818,7 @@ export interface CurrentPlanResponse {
   monthly_fee_brl: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  salvy_byok_enabled: boolean;
 }
 export interface SubscribePlanRequest {
   plan_offering_id: string;
@@ -1748,7 +1840,137 @@ export interface SubscribePlanResponse {
   pix: SubscribePixCheckout | null;
 }
 
-export type ListLedgerEntriesResponse = ListResponse<JsonObject>;
+export interface LedgerEntryResponse {
+  id: string;
+  object: 'ledger_entry';
+  /** `hold` and `release` are payment completion-fee holds and their return: never spend. */
+  type: 'debit' | 'credit' | 'hold' | 'release';
+  source_type: 'usage' | 'credit_topup' | 'payment_fee_hold';
+  source_id: string;
+  meter_id: string | null;
+  amount_brl: string;
+  uncollected_brl: string | null;
+  currency: 'brl';
+  environment: EnvironmentKind | null;
+  recorded_at: string;
+  trace_id: string | null;
+  /** The payment and fee reservation of a payment-fee entry; null otherwise. */
+  payment_fee: {
+    payment_object: 'payment_request' | 'agentic_payment';
+    payment_id: string;
+    reservation_id: string;
+  } | null;
+}
+export type ListLedgerEntriesResponse = ListResponse<LedgerEntryResponse>;
+
+export type PhoneRenewalStatus =
+  | 'scheduled'
+  | 'funding_required'
+  | 'funded'
+  | 'renewed'
+  | 'release_requested'
+  | 'released'
+  | 'cancelled';
+export type PhoneRenewalActionableState =
+  | 'upcoming'
+  | 'at_risk'
+  | 'funded'
+  | 'renewed'
+  | 'release_pending'
+  | 'released'
+  | 'cancelled';
+export type PhoneRenewalRecommendedAction =
+  | 'none'
+  | 'add_credit_or_enable_auto_topup'
+  | 'monitor_release';
+export interface PhoneRenewalResponse {
+  id: string;
+  object: 'phone_renewal';
+  status: PhoneRenewalStatus;
+  actionable_state: PhoneRenewalActionableState;
+  recommended_action: PhoneRenewalRecommendedAction;
+  phone_number_id: string;
+  display_name: string | null;
+  phone: string | null;
+  period_start: string;
+  period_end: string;
+  amount_brl: string;
+  currency: 'brl';
+  upcoming_notice_at: string | null;
+  funding_scheduled_at: string | null;
+  funding_attempted_at: string | null;
+  next_funding_attempt_at: string | null;
+  funded_at: string | null;
+  next_renewal_at: string | null;
+  renewal_warning_48h_at: string | null;
+  renewal_warning_24h_at: string | null;
+  grace_selected_at: string | null;
+  grace_ends_at: string | null;
+  release_cutoff_at: string | null;
+  release_requested_at: string | null;
+  renewed_at: string | null;
+  released_at: string | null;
+  cancelled_at: string | null;
+  terminal_at: string | null;
+}
+export interface PhoneRenewalSummary {
+  state: 'upcoming' | 'funded' | 'at_risk' | 'grace' | 'release_pending' | 'released' | 'unknown';
+  reason_codes: Array<
+    | 'insufficient_credit'
+    | 'grace_in_progress'
+    | 'grace_exhausted'
+    | 'release_committed'
+    | 'provider_timing_unknown'
+    | 'provider_state_unknown'
+    | 'cycle_not_ready'
+  >;
+  cycle_id: string | null;
+  amount_brl: string | null;
+  currency: 'brl' | null;
+  next_renewal_at: string | null;
+  release_cutoff_at: string | null;
+  renewal_warning_48h_at: string | null;
+  renewal_warning_24h_at: string | null;
+  grace_selected_at: string | null;
+  grace_ends_at: string | null;
+  automatic_release_enabled: boolean;
+  release_requested_at: string | null;
+  recommended_action: PhoneRenewalRecommendedAction | null;
+  evaluated_at: string;
+  provider_evidence_observed_at: string | null;
+}
+export interface ListPhoneRenewalsQuery {
+  limit?: number;
+  starting_after?: string;
+  status?: PhoneRenewalStatus;
+}
+export type ListPhoneRenewalsResponse = ListResponse<PhoneRenewalResponse>;
+
+export interface PhoneManagementCoverageResponse {
+  state: 'plan' | 'prepaid' | 'none';
+  covered_until: string | null;
+  next_charge_at: string | null;
+  next_charge_brl: string | null;
+}
+export interface PhoneManagementResponse {
+  phone_number_id: string;
+  coverage: PhoneManagementCoverageResponse;
+  covered_until: string | null;
+  next_charge_at: string | null;
+  next_charge_brl: string | null;
+}
+export interface PhoneManagementSummary {
+  retained_count: number;
+  monthly_total_brl: string;
+  next_charge_at: string | null;
+}
+export interface ListPhoneManagementQuery {
+  limit?: number;
+  starting_after?: string;
+}
+export type ListPhoneManagementResponse = ListResponse<PhoneManagementResponse> & {
+  summary: PhoneManagementSummary;
+};
 
 export type InvoiceStatus = 'generating' | 'ready' | 'failed';
 export interface InvoiceResponse {
@@ -1867,7 +2089,8 @@ export interface ListBillingPackagesResponse {
 
 export interface PurchaseBillingPackageRequest {
   package_code: string;
-  payment_method: 'pix' | 'card';
+  payment_method?: 'card';
+  payment_method_id?: string;
 }
 
 export type CreditTopupKind = 'cash' | 'package' | 'x402';
@@ -1915,7 +2138,10 @@ export interface BillingPaymentMethodResponse {
   updated_at: string;
 }
 export type ListBillingPaymentMethodsResponse = ListResponse<BillingPaymentMethodResponse>;
-export type SaveBillingPaymentMethodRequest = JsonObject;
+export interface SaveBillingPaymentMethodRequest {
+  stripe_payment_method_id: string;
+  set_default?: boolean;
+}
 export interface AutoTopupConfigResponse {
   object: 'auto_topup_config';
   enabled: boolean;
@@ -1925,7 +2151,12 @@ export interface AutoTopupConfigResponse {
   last_triggered_at: string | null;
   updated_at: string | null;
 }
-export type UpdateAutoTopupConfigRequest = JsonObject;
+export interface UpdateAutoTopupConfigRequest {
+  enabled: boolean;
+  threshold_brl: string;
+  amount_brl: string;
+  payment_method_id?: string | null;
+}
 
 export interface DataRetentionPolicyResponse {
   object: 'data_retention_policy';
@@ -1933,7 +2164,10 @@ export interface DataRetentionPolicyResponse {
   data_export_enabled: boolean;
   updated_at: string | null;
 }
-export type UpdateDataRetentionPolicyRequest = JsonObject;
+export interface UpdateDataRetentionPolicyRequest {
+  retention_days?: number;
+  data_export_enabled?: boolean;
+}
 
 export type PaymentRequestStatus =
   | 'link_pending'
@@ -1975,6 +2209,36 @@ export interface ListPaymentsQuery {
   starting_after?: string;
   status?: PaymentRequestStatus;
 }
+/**
+ * The payment-service fees of one accepted payment, the same object on
+ * `PaymentResponse` and `AgenticPaymentResponse`. Amounts are decimal strings
+ * with four places, snapshotted at acceptance and never re-priced.
+ */
+export interface PaymentFees {
+  /** `true` in sandbox: the amounts production would charge, with no balance movement. */
+  simulated: boolean;
+  /** Pricing version: the BRL rate card in force when the payment was accepted. */
+  rate_card_id: string;
+  initiation: {
+    /** Matches `payment_fee.reservation_id` on the ledger's `payment.initiation` debit. */
+    reservation_id: string;
+    amount_brl: string;
+    charged_at: string;
+  };
+  completion: {
+    /** Matches `payment_fee.reservation_id` on the ledger's hold, release and settlement. */
+    reservation_id: string;
+    /** Fraction of the payment amount: `"0.01"` is 1%. */
+    rate: string;
+    amount_brl: string;
+    /** One vocabulary on both payment rails. */
+    state: 'held' | 'settled' | 'released' | 'unresolved';
+    held_at: string;
+    settled_at: string | null;
+    released_at: string | null;
+  };
+}
+
 export interface PaymentResponse {
   id: string;
   object: 'payment_request';
@@ -2007,6 +2271,15 @@ export interface PaymentResponse {
   failed_at: string | null;
   expired_at: string | null;
   cancelled_at: string | null;
+  /**
+   * `null`: no fee is owed (the payment was charged none: accepted before
+   * payment-service fees applied, or by an API version that did not charge them).
+   * An `Idempotency-Key` replay (creation, request approval or the sandbox status
+   * route) returns its stored response, with `fees` as at the original call; read
+   * the payment for the current state. Absent only on such a replay whose
+   * response was stored before this field existed.
+   */
+  fees?: PaymentFees | null;
 }
 export type ListPaymentsResponse = ListResponse<PaymentResponse>;
 
@@ -2187,6 +2460,15 @@ export interface AgenticPaymentResponse {
   rejected_at: string | null;
   expired_at: string | null;
   error_at: string | null;
+  /**
+   * `null`: no fee is owed (the payment was charged none: accepted before
+   * payment-service fees applied, or by an API version that did not charge them).
+   * An `Idempotency-Key` replay (creation or cancel) returns its stored response,
+   * with `fees` as at the original call; read the payment for the current state.
+   * Absent only on such a replay whose response was stored before this field
+   * existed.
+   */
+  fees?: PaymentFees | null;
 }
 
 export interface ListAgenticAuthorizationsResponse {
@@ -2203,10 +2485,54 @@ export interface ListAgenticPaymentsResponse {
   next_cursor: string | null;
 }
 
-export type ProviderName = 'meta' | 'iniciador' | 'abacate_pay';
+export type ProviderName = 'meta' | 'iniciador' | 'abacate_pay' | 'salvy';
 export type ProviderConnectionStatus = 'pending' | 'connected' | 'suspended' | 'disconnected';
-export type ProviderConnectionChannel = 'whatsapp' | 'instagram' | 'payments' | 'agentic_payments';
+export type ProviderConnectionChannel =
+  | 'whatsapp'
+  | 'instagram'
+  | 'payments'
+  | 'agentic_payments'
+  | 'phone_numbers';
+export type MetaConnectionChannel = 'whatsapp' | 'instagram';
 export type ProviderTokenSource = 'manual' | 'embedded_signup';
+export interface SalvyConnectionOperation {
+  state: 'queued' | 'succeeded' | 'failed';
+  error_code:
+    | 'salvy_credentials_invalid'
+    | 'salvy_provider_unavailable'
+    | 'salvy_connection_unavailable'
+    | null;
+}
+export interface SalvyConnectionInfo {
+  sync_mode: 'polling';
+  credential_hint: string | null;
+  discovered_at: string | null;
+  operation: SalvyConnectionOperation | null;
+}
+export interface RegisterSalvyConnectionRequest {
+  api_key: string;
+  display_name?: string;
+  continuation_terms_version: 'salvy_byok_v1';
+}
+export type ApiKeyRegisterSalvyConnectionRequest = RegisterSalvyConnectionRequest;
+export type DashboardBffRegisterSalvyConnectionRequest = RegisterSalvyConnectionRequest;
+export interface RotateSalvyConnectionRequest {
+  api_key: string;
+}
+export type ApiKeyRotateSalvyConnectionRequest = RotateSalvyConnectionRequest;
+export type DashboardBffRotateSalvyConnectionRequest = RotateSalvyConnectionRequest;
+export interface SalvyNumberResponse {
+  provider_number_id: string;
+  phone: string;
+  provider_status: string;
+  imported_phone_number_id: string | null;
+}
+export interface ListSalvyNumbersResponse {
+  object: 'list';
+  data: SalvyNumberResponse[];
+  has_more: boolean;
+  next_cursor: string | null;
+}
 export interface PaymentReceiverProfile {
   name?: string;
   tax_id?: string;
@@ -2230,7 +2556,7 @@ export interface AgenticPaymentProviderCapabilities {
   polling: boolean;
 }
 export interface RegisterMetaConnectionRequest {
-  channel?: ProviderConnectionChannel;
+  channel?: MetaConnectionChannel;
   display_name: string;
   waba_id?: string;
   phone_number_id?: string;
@@ -2321,6 +2647,7 @@ export interface ProviderConnectionResponse {
   ig_business_account_id: string | null;
   page_id: string | null;
   provider_account_id: string | null;
+  salvy?: SalvyConnectionInfo | null;
   payment_receiver: PaymentReceiverProfile | null;
   payment_capabilities: PaymentProviderCapabilities | null;
   agentic_capabilities: AgenticPaymentProviderCapabilities | null;
@@ -2428,6 +2755,7 @@ export interface ProviderConnectionStatusResponse {
 
 export type ProviderCredentialSetupTarget =
   | 'meta.whatsapp'
+  | 'salvy'
   | 'abacate_pay.payments'
   | 'iniciador.payments'
   | 'iniciador.agentic_payments'
@@ -2469,6 +2797,7 @@ export type ProviderCredentialSetupSessionResponse = ProviderCredentialSetupSess
     | {
         target:
           | 'meta.whatsapp'
+          | 'salvy'
           | 'abacate_pay.payments'
           | 'iniciador.payments'
           | 'iniciador.agentic_payments';
@@ -2536,11 +2865,13 @@ export interface MetaSignupSessionResponse {
 
 export interface OptInRequest {
   phone: string;
-  [key: string]: unknown;
+  source?: ContactSource;
+  metadata?: JsonObject;
 }
 export interface OptOutRequest {
   phone: string;
-  [key: string]: unknown;
+  source?: ContactSource;
+  reason?: string;
 }
 export type BulkImportContactRow = {
   phone: string;
@@ -2548,9 +2879,17 @@ export type BulkImportContactRow = {
 };
 export type BulkImportContactsRequest = {
   rows: BulkImportContactRow[];
-  source?: string;
+  source?: ContactSource;
 };
 export type ContactStatus = 'opted_in' | 'opted_out';
+export type ContactSource = 'api' | 'inbound_keyword' | 'dashboard_override';
+export interface ListContactsQuery {
+  limit?: number;
+  starting_after?: string;
+  search?: string;
+  status?: ContactStatus;
+  tag_id?: string;
+}
 export interface ContactTagRef {
   id: string;
   name: string;
@@ -2602,7 +2941,10 @@ export interface ContactErasureResponse {
   messages_redacted: number;
 }
 
-export type CreateFlowRequest = JsonObject;
+export interface CreateFlowRequest {
+  name: string;
+  flow_json: JsonObject;
+}
 export type FlowStatus = 'draft' | 'validated' | 'published' | 'archived';
 export interface FlowResponse {
   id: string;
@@ -2620,8 +2962,83 @@ export interface FlowResponse {
 }
 export type ListFlowsResponse = ListResponse<FlowResponse>;
 
-export type UpsertLLMRouteRequest = JsonObject;
-export type UpdateLLMRouteRequest = JsonObject;
+/**
+ * WhatsApp Business groups (beta). Never personal WhatsApp groups. The status
+ * and reason unions stay inline so the SDK exports one type per response.
+ */
+export interface GroupEligibilityResponse {
+  object: 'group_eligibility';
+  phone_number_id: string;
+  environment: EnvironmentKind;
+  status: 'eligible' | 'not_eligible' | 'unknown' | 'not_checked' | 'read_failed';
+  /** Non-empty only when `status` is `not_eligible`. */
+  reasons: (
+    | 'not_cloud_api'
+    | 'whatsapp_business_app_number'
+    | 'not_official_business_account'
+    | 'missing_messaging_permission'
+  )[];
+  checked_at: string | null;
+  check_requested_at: string | null;
+}
+
+/**
+ * A WhatsApp Business group (beta). `status` is `pending` until Tyxter learns
+ * Meta's create outcome, or until Tyxter's worker finds it cannot send the
+ * create (its phone number, eligibility answer or Meta connection rules it
+ * out), which ends it `failed`; `provider_group_id` and `invite_link` stay `null`
+ * until Meta confirms the group. `invite_link` is replaced when an invite-link
+ * reset (`groups.resetInviteLink`) completes.
+ */
+export interface GroupResponse {
+  id: string;
+  object: 'group';
+  status: 'pending' | 'active' | 'failed' | 'deleting' | 'deleted';
+  environment: EnvironmentKind;
+  phone_number_id: string;
+  subject: string;
+  description: string | null;
+  join_approval_mode: 'auto_approve';
+  provider_group_id: string | null;
+  invite_link: string | null;
+  /**
+   * Current members as Tyxter recorded them from Meta's participant events
+   * (sandbox: `sandbox.groups.simulateParticipant`), oldest join first; empty
+   * once the group is `deleted`. `wa_id` is the participant's WhatsApp ID.
+   */
+  participants: { wa_id: string; joined_at: string }[];
+  participant_count: number;
+  /** Why the last provider operation failed; `provider` is Meta's error detail. */
+  failure: { code: string; message: string; provider: Record<string, unknown> | null } | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+export type ListGroupsResponse = ListResponse<GroupResponse>;
+
+export interface UpsertLLMRouteRequest {
+  phone_number_id?: string;
+  provider: LLMProviderKind;
+  model: string;
+  api_key: string;
+  system_prompt: string;
+  max_tokens?: number;
+  temperature?: number;
+  daily_cost_cap_brl?: string;
+  handoff_phrases?: string[];
+  blocked_topics?: LLMBlockedTopicRule[];
+  blocked_topic_fallback_response?: string;
+  max_context_messages?: number;
+  max_context_age_seconds?: number | null;
+  memory_persistence?: LLMMemoryPersistence;
+  enabled?: boolean;
+}
+export type UpdateLLMRouteRequest = Partial<
+  Omit<UpsertLLMRouteRequest, 'phone_number_id' | 'provider' | 'daily_cost_cap_brl'>
+> & { daily_cost_cap_brl?: string | null };
+export interface LLMRouteTargetQuery {
+  phone_number_id?: string;
+}
 export type LLMProviderKind = 'anthropic' | 'openai';
 export type LLMMemoryPersistence = 'disabled' | 'opt_in' | 'opt_out';
 export interface LLMBlockedTopicRule {
@@ -2671,7 +3088,12 @@ export interface ListLLMRoutePromptVersionsQuery {
 }
 export type ListLLMRoutePromptVersionsResponse = ListResponse<LLMRoutePromptVersionResponse>;
 
-export type LLMCompletionRequest = JsonObject;
+export interface LLMCompletionRequest {
+  messages: LLMResponseLogMessage[];
+  contact_phone?: string;
+  phone_number_id?: string;
+  trace_id?: string;
+}
 export interface LLMCompletionResponse {
   object: 'llm_completion';
   content: string;
@@ -2723,14 +3145,16 @@ export type AIAgentProviderKind = 'anthropic' | 'openai';
 export type AIAgentMemoryPersistence = LLMMemoryPersistence;
 export type AIAgentBlockedTopicRule = LLMBlockedTopicRule;
 
-export type CreateAIAgentRequest = JsonObject & {
+export interface CreateAIAgentRequest extends Omit<UpsertLLMRouteRequest, 'phone_number_id'> {
   name: string;
+  description?: string;
   provider: AIAgentProviderKind;
-  model: string;
-  api_key: string;
-  system_prompt: string;
+}
+export type UpdateAIAgentRequest = UpdateLLMRouteRequest & {
+  name?: string;
+  description?: string | null;
+  archived?: boolean;
 };
-export type UpdateAIAgentRequest = JsonObject;
 export interface AIAgentResponse {
   id: string;
   object: 'ai_agent';
@@ -2770,9 +3194,7 @@ export interface AIAgentPromptVersionResponse {
   created_at: string;
 }
 export type ListAIAgentPromptVersionsResponse = ListResponse<AIAgentPromptVersionResponse>;
-export type AIAgentCompletionRequest = JsonObject & {
-  messages: Array<{ role: 'user' | 'assistant'; content: string; created_at?: string }>;
-};
+export type AIAgentCompletionRequest = Omit<LLMCompletionRequest, 'phone_number_id'>;
 export interface AIAgentCompletionResponse {
   object: 'ai_agent_completion';
   ai_agent_id: string;
@@ -2874,7 +3296,8 @@ export interface CreateAutomationRequest {
   name: string;
   description?: string;
 }
-export type UpdateAutomationRequest = Partial<CreateAutomationRequest> & {
+export type UpdateAutomationRequest = Partial<Omit<CreateAutomationRequest, 'description'>> & {
+  description?: string | null;
   status?: AutomationStatus;
 };
 export interface AutomationResponse {
@@ -2977,6 +3400,17 @@ export type ConnectPhoneNumberRequest = {
   meta_phone_number_id: string;
   display_name?: string;
 };
+export type ImportSalvyPhoneNumberRequest = {
+  provider_connection_id: string;
+  provider_number_id: string;
+  meta_phone_number_id?: string;
+  display_name?: string;
+  continuation_terms_version: 'salvy_byok_v1';
+};
+
+export type CompleteSalvyPhoneRegistrationRequest = {
+  meta_phone_number_id: string;
+};
 export type TransferPhoneNumberRequest = {
   source_project_id: string;
   source_environment_id: string;
@@ -3032,6 +3466,18 @@ export interface PhoneNumberPendingNameReviewResponse {
   /** Same successful health-sweep freshness fact as `meta_health_synced_at`. */
   observed_at: string;
 }
+export interface SalvyPhoneManagementResponse {
+  provider_connection_id: string;
+  provider_number_id: string;
+  state: 'enabled' | 'suspended';
+  coverage: 'plan' | 'prepaid' | 'none';
+  covered_until: string | null;
+  next_charge_at: string | null;
+  next_charge_brl: string | null;
+  suspension_reason: string | null;
+  provider_status: string | null;
+  synced_at: string | null;
+}
 export interface PhoneNumberResponse {
   id: string;
   object: 'phone_number';
@@ -3044,6 +3490,7 @@ export interface PhoneNumberResponse {
   provider_number_id: string | null;
   meta_phone_number_id: string | null;
   waba_id: string | null;
+  salvy_management?: SalvyPhoneManagementResponse | null;
   quality_rating: PhoneQualityRating;
   messaging_tier: PhoneMessagingTier;
   messaging_limit_tier: string | null;
@@ -3080,12 +3527,13 @@ export interface PhoneNumberResponse {
    * conversation with before Tyxter starts holding sends.
    *
    * Measured against a rolling 24-hour window whose slots expire one by one —
-   * there is no reset moment — and against a cap that already has a safety slice
-   * held back, so it runs out slightly before WhatsApp's own limit does.
+   * there is no reset moment — and against a cap reduced by the configured safety
+   * margin and sending-phone quality ratio. It may reach zero before the raw
+   * allowance is spent.
    *
-   * On a Meta number linked to a Business Portfolio, this is the shared
-   * portfolio estimate repeated on each linked phone. `messaging_tier` and the
-   * raw nullable `messaging_limit_tier` are descriptive health observations,
+   * Linked phones compare shared portfolio usage with their own quality-adjusted
+   * thresholds, so different quality can yield different remaining values.
+   * `messaging_tier` and the raw nullable `messaging_limit_tier` describe health,
    * not separate quotas. An unlinked Meta number instead uses a conservative
    * per-phone fallback; sandbox follows its deterministic simulated phone tier.
    *
@@ -3111,9 +3559,14 @@ export interface PhoneNumberResponse {
   updated_at: string;
   activated_at: string | null;
   released_at: string | null;
+  renewal?: PhoneRenewalSummary | null;
   recent_messages: PhoneNumberRecentMessageResponse[];
 }
-export type ListPhoneNumbersResponse = ListResponse<PhoneNumberResponse>;
+export interface PhoneNumberReadResponse extends PhoneNumberResponse {
+  /** Current rental assessment; null only when rental policy is inapplicable. */
+  renewal: PhoneRenewalSummary | null;
+}
+export type ListPhoneNumbersResponse = ListResponse<PhoneNumberReadResponse>;
 export interface AvailableRegionResponse {
   ddd: string;
   country: 'BR';
@@ -3216,7 +3669,9 @@ export interface TemplateGenerationResponse {
   authoring_signals: TemplateAuthoringSignal[];
 }
 export type ListTemplatesResponse = ListResponse<TemplateResponse>;
-export type EstimateTemplateCostRequest = JsonObject;
+export interface EstimateTemplateCostRequest {
+  recipients?: number;
+}
 export interface TemplateCostEstimateResponse {
   object: 'template_cost_estimate';
   template_id: string;
@@ -3254,3 +3709,12 @@ export interface TemplateAnalyticsResponse {
     last_sent_at: string | null;
   };
 }
+
+export type {
+  CreditToppedUpWebhookData,
+  CreditToppedUpWebhookEnvelope,
+  CreditHardBlockLiftedWebhookData,
+  CreditHardBlockEngagedWebhookData,
+  CreditHardBlockLiftedWebhookEnvelope,
+  CreditHardBlockEngagedWebhookEnvelope,
+} from './credit-webhook-contracts.js';

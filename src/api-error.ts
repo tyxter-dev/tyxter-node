@@ -1,4 +1,8 @@
-import type { TyxterErrorBody, TyxterErrorType } from './contracts.js';
+import type {
+  TyxterErrorBody,
+  TyxterErrorType,
+  WebhookListenSessionConflictDetails,
+} from './contracts.js';
 
 export class TyxterApiError extends Error {
   readonly status: number;
@@ -6,8 +10,10 @@ export class TyxterApiError extends Error {
   readonly code: string;
   readonly param?: string;
   readonly retryAfterMs?: number;
+  readonly retryable?: false;
   readonly requestId?: string;
   readonly traceId?: string;
+  readonly details?: WebhookListenSessionConflictDetails;
   readonly body: TyxterErrorBody;
 
   constructor(status: number, body: TyxterErrorBody) {
@@ -18,8 +24,10 @@ export class TyxterApiError extends Error {
     this.code = body.code;
     this.param = body.param;
     this.retryAfterMs = body.retry_after_ms;
+    this.retryable = body.retryable;
     this.requestId = body.request_id;
     this.traceId = body.trace_id;
+    this.details = body.details;
     this.body = body;
   }
 }

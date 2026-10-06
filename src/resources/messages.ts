@@ -113,10 +113,15 @@ export class MessagesResource {
     );
   }
 
-  async retrieveTranscription(messageId: string): Promise<MessageMediaTranscriptResponse> {
+  async retrieveTranscription(
+    messageId: string,
+    options: { traceId?: string } = {},
+  ): Promise<MessageMediaTranscriptResponse> {
     return this.http.request<MessageMediaTranscriptResponse>(
       'GET',
       `/v1/messages/${messageId}/transcription`,
+      undefined,
+      options.traceId ? { 'tyxter-trace-id': options.traceId } : {},
     );
   }
 

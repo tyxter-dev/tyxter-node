@@ -152,6 +152,43 @@ describe('ProviderConnectionsResource', () => {
     expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ code: 'code_only' });
   });
 
+  it('registers, rotates, refreshes, and lists Salvy through the nested helper', async () => {
+    const { client, calls } = withCapture({ object: 'provider_connection', id: 'pc_salvy' });
+
+    await client.providerConnections.salvy.register(
+      {
+        api_key: 'salvy-secret',
+        continuation_terms_version: 'salvy_byok_v1',
+      },
+      'idem_salvy_register',
+    );
+    await client.providerConnections.salvy.rotate(
+      'pc_salvy',
+      { api_key: 'salvy-replacement' },
+      'idem_salvy_rotate',
+    );
+    await client.providerConnections.salvy.refreshDiscovery('pc_salvy', 'idem_salvy_discovery');
+    await client.providerConnections.salvy.listNumbers('pc_salvy', {
+      limit: 10,
+      starting_after: 'cursor_1',
+    });
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'POST http://test/v1/provider-connections/salvy',
+      'POST http://test/v1/provider-connections/pc_salvy/salvy/rotate',
+      'POST http://test/v1/provider-connections/pc_salvy/salvy/discovery',
+      'GET http://test/v1/provider-connections/pc_salvy/salvy/numbers?limit=10&starting_after=cursor_1',
+    ]);
+    expect(calls[0]?.headers['Idempotency-Key']).toBe('idem_salvy_register');
+    expect(calls[1]?.headers['Idempotency-Key']).toBe('idem_salvy_rotate');
+    expect(calls[2]?.headers['Idempotency-Key']).toBe('idem_salvy_discovery');
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({
+      api_key: 'salvy-secret',
+      continuation_terms_version: 'salvy_byok_v1',
+    });
+    expect(JSON.parse(calls[2]?.body ?? '{}')).toEqual({});
+  });
+
   it('completes a pending Meta registration without a request body', async () => {
     const { client, calls } = withCapture({
       object: 'provider_connection',

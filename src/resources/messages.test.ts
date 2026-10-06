@@ -509,7 +509,7 @@ describe('MessagesResource', () => {
     await expect(
       client.messages.requestTranscription(
         'msg_123',
-        { language: 'pt' },
+        { language: 'pt', prompt: 'Clinic', keywords: ['Ada', 'Ada'] },
         { traceId: 'trc_transcript' },
       ),
     ).resolves.toMatchObject({ id: 'mtr_123', status: 'pending' });
@@ -523,7 +523,11 @@ describe('MessagesResource', () => {
       url: 'http://test/v1/messages/msg_123/transcription',
       headers: expect.objectContaining({ 'tyxter-trace-id': 'trc_transcript' }),
     });
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ language: 'pt' });
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({
+      language: 'pt',
+      prompt: 'Clinic',
+      keywords: ['Ada', 'Ada'],
+    });
     expect(calls[1]).toMatchObject({
       method: 'GET',
       url: 'http://test/v1/messages/msg_123/transcription',
@@ -553,7 +557,7 @@ describe('MessagesResource', () => {
     await expect(
       client.messages.retryTranscription(
         'msg_123',
-        { language: 'pt' },
+        { language: 'pt', prompt: '', keywords: [] },
         { idempotencyKey: '  idem-retry-1  ', traceId: 'trc_retry' },
       ),
     ).resolves.toMatchObject({ id: 'mtr_123', status: 'pending' });
@@ -566,7 +570,11 @@ describe('MessagesResource', () => {
         'tyxter-trace-id': 'trc_retry',
       }),
     });
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ language: 'pt' });
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({
+      language: 'pt',
+      prompt: '',
+      keywords: [],
+    });
   });
 
   it('rejects missing, undefined, or blank retry keys before issuing a request on JavaScript paths', async () => {

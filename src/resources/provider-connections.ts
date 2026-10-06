@@ -1,12 +1,16 @@
+import type { MetaConnectionMutationResponse } from '../display-name-contracts.js';
 import type { HttpClient } from '../client.js';
 import type {
   DeleteProviderConnectionResponse,
   ExchangeMetaOAuthCodeRequest,
   ListProviderConnectionsResponse,
+  ListSalvyNumbersResponse,
   MetaOnboardingConfigResponse,
   ProviderConnectionResponse,
   ProviderConnectionStatusResponse,
+  RegisterSalvyConnectionRequest,
   RegisterMetaConnectionRequest,
+  RotateSalvyConnectionRequest,
   RotateProviderConnectionTokenRequest,
 } from '../contracts.js';
 import { toQs } from './internal.js';
@@ -25,6 +29,17 @@ export class ProviderConnectionsResource {
       this.exchangeMetaOAuthCode(body, idempotencyKey),
     completeRegistration: (connectionId: string, idempotencyKey?: string) =>
       this.completeMetaRegistration(connectionId, idempotencyKey),
+  };
+
+  readonly salvy = {
+    register: (body: RegisterSalvyConnectionRequest, idempotencyKey: string) =>
+      this.registerSalvy(body, idempotencyKey),
+    rotate: (connectionId: string, body: RotateSalvyConnectionRequest, idempotencyKey: string) =>
+      this.rotateSalvy(connectionId, body, idempotencyKey),
+    refreshDiscovery: (connectionId: string, idempotencyKey: string) =>
+      this.refreshSalvyDiscovery(connectionId, idempotencyKey),
+    listNumbers: (connectionId: string, query: ListProviderConnectionsQuery = {}) =>
+      this.listSalvyNumbers(connectionId, query),
   };
 
   constructor(private readonly http: HttpClient) {}
@@ -57,8 +72,8 @@ export class ProviderConnectionsResource {
   async registerMeta(
     body: RegisterMetaConnectionRequest,
     idempotencyKey?: string,
-  ): Promise<ProviderConnectionResponse> {
-    return this.http.request<ProviderConnectionResponse>(
+  ): Promise<MetaConnectionMutationResponse> {
+    return this.http.request<MetaConnectionMutationResponse>(
       'POST',
       '/v1/provider-connections/meta',
       body,
@@ -66,11 +81,59 @@ export class ProviderConnectionsResource {
     );
   }
 
+  async registerSalvy(
+    body: RegisterSalvyConnectionRequest,
+    idempotencyKey: string,
+  ): Promise<ProviderConnectionResponse> {
+    return this.http.request<ProviderConnectionResponse>(
+      'POST',
+      '/v1/provider-connections/salvy',
+      body,
+      { 'Idempotency-Key': idempotencyKey },
+    );
+  }
+
+  async rotateSalvy(
+    connectionId: string,
+    body: RotateSalvyConnectionRequest,
+    idempotencyKey: string,
+  ): Promise<ProviderConnectionResponse> {
+    return this.http.request<ProviderConnectionResponse>(
+      'POST',
+      `/v1/provider-connections/${connectionId}/salvy/rotate`,
+      body,
+      { 'Idempotency-Key': idempotencyKey },
+    );
+  }
+
+  async refreshSalvyDiscovery(
+    connectionId: string,
+    idempotencyKey: string,
+  ): Promise<ProviderConnectionResponse> {
+    return this.http.request<ProviderConnectionResponse>(
+      'POST',
+      `/v1/provider-connections/${connectionId}/salvy/discovery`,
+      {},
+      { 'Idempotency-Key': idempotencyKey },
+    );
+  }
+
+  async listSalvyNumbers(
+    connectionId: string,
+    query: ListProviderConnectionsQuery = {},
+  ): Promise<ListSalvyNumbersResponse> {
+    const qs = toQs({ limit: query.limit, starting_after: query.starting_after });
+    return this.http.request<ListSalvyNumbersResponse>(
+      'GET',
+      `/v1/provider-connections/${connectionId}/salvy/numbers${qs}`,
+    );
+  }
+
   async exchangeMetaOAuthCode(
     body: ExchangeMetaOAuthCodeRequest,
     idempotencyKey?: string,
-  ): Promise<ProviderConnectionResponse> {
-    return this.http.request<ProviderConnectionResponse>(
+  ): Promise<MetaConnectionMutationResponse> {
+    return this.http.request<MetaConnectionMutationResponse>(
       'POST',
       '/v1/provider-connections/meta/oauth',
       body,
@@ -86,8 +149,8 @@ export class ProviderConnectionsResource {
   async completeMetaRegistration(
     connectionId: string,
     idempotencyKey?: string,
-  ): Promise<ProviderConnectionResponse> {
-    return this.http.request<ProviderConnectionResponse>(
+  ): Promise<MetaConnectionMutationResponse> {
+    return this.http.request<MetaConnectionMutationResponse>(
       'POST',
       `/v1/provider-connections/${connectionId}/meta/complete-registration`,
       undefined,

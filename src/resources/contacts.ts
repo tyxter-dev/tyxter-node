@@ -5,6 +5,7 @@ import type {
   ContactErasureResponse,
   ContactResponse,
   ListContactsResponse,
+  ListContactsQuery,
   OptInRequest,
   OptOutRequest,
 } from '../contracts.js';
@@ -34,10 +35,9 @@ export class ContactsResource {
     return this.http.request<ContactResponse>('POST', '/v1/contacts/opt-out', input, headers);
   }
 
-  async list(
-    query: { limit?: number; starting_after?: string } = {},
-  ): Promise<ListContactsResponse> {
-    return this.http.request<ListContactsResponse>('GET', `/v1/contacts${toQs(query)}`);
+  async list(query: ListContactsQuery = {}): Promise<ListContactsResponse> {
+    const qs = toQs({ ...query });
+    return this.http.request<ListContactsResponse>('GET', `/v1/contacts${qs}`);
   }
 
   async bulkImport(

@@ -11,19 +11,25 @@ export class AgentApiKeyDeviceAuthorizationsResource {
 
   async create(
     input: CreateAgentApiKeyDeviceAuthorizationRequest,
+    options: { traceId?: string } = {},
   ): Promise<AgentApiKeyDeviceAuthorizationResponse> {
     return this.http.request<AgentApiKeyDeviceAuthorizationResponse>(
       'POST',
       '/v1/agent-api-key-device-authorizations',
       input,
+      options.traceId ? { 'tyxter-trace-id': options.traceId } : {},
     );
   }
 
-  async token(input: AgentApiKeyDeviceTokenRequest): Promise<AgentApiKeyDeviceTokenResponse> {
+  async token(
+    input: AgentApiKeyDeviceTokenRequest,
+    options: { traceId?: string } = {},
+  ): Promise<AgentApiKeyDeviceTokenResponse> {
     return this.http.request<AgentApiKeyDeviceTokenResponse>(
       'POST',
       '/v1/agent-api-key-device-authorizations/token',
       input,
+      options.traceId ? { 'tyxter-trace-id': options.traceId } : {},
     );
   }
 }

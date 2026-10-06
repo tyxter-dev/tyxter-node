@@ -261,6 +261,7 @@ export const InstagramMessage = {
   },
 } as const;
 
+/** @deprecated These legacy payloads are rejected by the API with invalid_message_request. */
 export const WhatsAppChannelMessage = {
   text(input: WhatsAppChannelTextMessageInput): WhatsAppChannelTextRequest {
     return addMetadata(

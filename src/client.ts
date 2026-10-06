@@ -19,6 +19,7 @@ import { DataRetentionResource } from './resources/data-retention.js';
 import { FeedbackResource } from './resources/feedback.js';
 import { FiscalResource } from './resources/fiscal.js';
 import { FlowsResource } from './resources/flows.js';
+import { GroupsResource } from './resources/groups.js';
 import { LLMResource } from './resources/llm.js';
 import { MediaResource } from './resources/media.js';
 import { MetaSignupSessionsResource } from './resources/meta-signup-sessions.js';
@@ -63,6 +64,8 @@ export class Tyxter {
   readonly feedback: FeedbackResource;
   readonly fiscal: FiscalResource;
   readonly flows: FlowsResource;
+  /** WhatsApp Business groups (beta). */
+  readonly groups: GroupsResource;
   readonly llm: LLMResource;
   readonly media: MediaResource;
   readonly metaSignupSessions: MetaSignupSessionsResource;
@@ -78,6 +81,7 @@ export class Tyxter {
   readonly usage: UsageResource;
   readonly whatsapp: WhatsAppMessagesResource;
   readonly instagram: InstagramMessagesResource;
+  /** @deprecated Tyxter does not support WhatsApp Channel publishing. Calls are rejected by the API. */
   readonly whatsappChannels: WhatsAppChannelsResource;
 
   constructor(private readonly options: TyxterClientOptions) {
@@ -105,6 +109,7 @@ export class Tyxter {
     this.feedback = new FeedbackResource(http);
     this.fiscal = new FiscalResource(http);
     this.flows = new FlowsResource(http);
+    this.groups = new GroupsResource(http);
     this.llm = new LLMResource(http);
     this.media = new MediaResource(http);
     this.metaSignupSessions = new MetaSignupSessionsResource(http);

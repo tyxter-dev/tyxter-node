@@ -1,6 +1,7 @@
 export { Tyxter, TyxterBootstrap, HttpClient, PublicHttpClient } from './client.js';
 export type { TyxterBootstrapOptions, TyxterClientOptions } from './client.js';
 export type * from './contracts.js';
+export type * from './display-name-contracts.js';
 export { TyxterApiError } from './api-error.js';
 export {
   InstagramMessage,

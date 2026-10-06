@@ -20,13 +20,18 @@ export class BatchesResource {
     return this.http.request<MessageBatchResponse>('POST', '/v1/batches', input, headers);
   }
 
-  async retrieve(id: string): Promise<MessageBatchResponse> {
-    return this.http.request<MessageBatchResponse>('GET', `/v1/batches/${id}`);
+  async retrieve(id: string, options: { traceId?: string } = {}): Promise<MessageBatchResponse> {
+    return this.http.request<MessageBatchResponse>(
+      'GET',
+      `/v1/batches/${id}`,
+      undefined,
+      controlHeaders(options),
+    );
   }
 
   async pause(
     id: string,
-    options: { idempotencyKey?: string } = {},
+    options: { idempotencyKey?: string; traceId?: string } = {},
   ): Promise<MessageBatchResponse> {
     return this.http.request<MessageBatchResponse>(
       'POST',
@@ -38,7 +43,7 @@ export class BatchesResource {
 
   async resume(
     id: string,
-    options: { idempotencyKey?: string } = {},
+    options: { idempotencyKey?: string; traceId?: string } = {},
   ): Promise<MessageBatchResponse> {
     return this.http.request<MessageBatchResponse>(
       'POST',
@@ -50,7 +55,7 @@ export class BatchesResource {
 
   async cancel(
     id: string,
-    options: { idempotencyKey?: string } = {},
+    options: { idempotencyKey?: string; traceId?: string } = {},
   ): Promise<MessageBatchResponse> {
     return this.http.request<MessageBatchResponse>(
       'POST',
@@ -60,22 +65,37 @@ export class BatchesResource {
     );
   }
 
-  async failures(id: string): Promise<MessageBatchFailureExportResponse> {
+  async failures(
+    id: string,
+    options: { traceId?: string } = {},
+  ): Promise<MessageBatchFailureExportResponse> {
     return this.http.request<MessageBatchFailureExportResponse>(
       'GET',
       `/v1/batches/${id}/failures`,
+      undefined,
+      controlHeaders(options),
     );
   }
 
   async list(
     query: { limit?: number; starting_after?: string } = {},
+    options: { traceId?: string } = {},
   ): Promise<ListMessageBatchesResponse> {
-    return this.http.request<ListMessageBatchesResponse>('GET', `/v1/batches${toQs(query)}`);
+    return this.http.request<ListMessageBatchesResponse>(
+      'GET',
+      `/v1/batches${toQs(query)}`,
+      undefined,
+      controlHeaders(options),
+    );
   }
 }
 
-function controlHeaders(options: { idempotencyKey?: string }): Record<string, string> {
+function controlHeaders(options: {
+  idempotencyKey?: string;
+  traceId?: string;
+}): Record<string, string> {
   const headers: Record<string, string> = {};
   if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
+  if (options.traceId) headers['tyxter-trace-id'] = options.traceId;
   return headers;
 }
